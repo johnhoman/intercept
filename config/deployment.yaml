@@ -2,21 +2,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kfp-artifact-api
+  name: webhooks
   namespace: system
   labels:
-    app: kfp-artifact-api
+    app: webhooks
 spec:
   selector:
     matchLabels:
-      app: kfp-artifact-api
+      app: webhooks
   replicas: 1
   template:
     metadata:
       annotations:
-        kubectl.kubernetes.io/default-container: kfp-artifact-api
+        kubectl.kubernetes.io/default-container: webhooks
       labels:
-        app: kfp-artifact-api
+        app: webhooks
     spec:
       containers:
         - command:
@@ -27,13 +27,8 @@ spec:
           - --port=8888
           ports:
           - containerPort: 8888
-          env:
-          - name: KFP_ARTIFACT_API_METADATA_HOST
-            value: metadata-grpc-service.kubeflow
-          - name: KFP_ARTIFACT_API_METADATA_PORT
-            value: "8080"
-          image: kfp-artifact-api:latest
-          name: kfp-artifact-api
+          image: wehbooks:latest
+          name: webhooks
           securityContext:
             allowPrivilegeEscalation: false
           resources:
@@ -43,5 +38,5 @@ spec:
             requests:
               cpu: 10m
               memory: 64Mi
-      serviceAccountName: kfp-artifact-api
+      serviceAccountName: webhooks
       terminationGracePeriodSeconds: 10
