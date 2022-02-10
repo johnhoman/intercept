@@ -1,0 +1,47 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kfp-artifact-api
+  namespace: system
+  labels:
+    app: kfp-artifact-api
+spec:
+  selector:
+    matchLabels:
+      app: kfp-artifact-api
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: kfp-artifact-api
+      labels:
+        app: kfp-artifact-api
+    spec:
+      containers:
+        - command:
+          - uvicorn
+          args:
+          - main:app
+          - --host=0.0.0.0
+          - --port=8888
+          ports:
+          - containerPort: 8888
+          env:
+          - name: KFP_ARTIFACT_API_METADATA_HOST
+            value: metadata-grpc-service.kubeflow
+          - name: KFP_ARTIFACT_API_METADATA_PORT
+            value: "8080"
+          image: kfp-artifact-api:latest
+          name: kfp-artifact-api
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+      serviceAccountName: kfp-artifact-api
+      terminationGracePeriodSeconds: 10
