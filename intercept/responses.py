@@ -35,10 +35,11 @@ def allowed(admission_review) -> dict:
     return _response(admission_review)
 
 
-def denied(admission_review, reason="") -> dict:
+def denied(admission_review, reason=None) -> dict:
     admission_review.response = AdmissionResponse(
         allowed=False,
         uid=admission_review.request.uid,
-        status={"message": reason, "code": 403}
     )
+    if reason:
+        admission_review.response.status = {"message": reason, "code": 403}
     return _response(admission_review)

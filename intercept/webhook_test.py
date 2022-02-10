@@ -1,4 +1,5 @@
 import base64
+import copy
 import json
 
 from fastapi import FastAPI
@@ -6,6 +7,8 @@ from fastapi.testclient import TestClient
 from kubernetes.client import V1Pod, V1Container
 
 from intercept import webhook
+from intercept import types
+from intercept import responses
 
 
 def get_patch(patch: str):
@@ -160,4 +163,34 @@ def validate_name(pod):
 def test_validate_create():
     response = client.post("/validate-labels-v1-pod", json=admission_review).json().get("response")
     assert response["allowed"] is False
+
+
+@app.post("/validate-update-v1-pod")
+@webhook.validate_update(V1Pod)
+def validate_label_change(new, old):
+    if old.metadata.labels != new.metadata.labels:
+        raise webhook.Denied("invalid name found")
+
+
+def test_validate_update():
+    review = copy.deepcopy(admission_review)
+    review = types.AdmissionReview(**review)
+    review.request.old_object = copy.deepcopy(review.request.object)
+    review.request.object["metadata"]["labels"] = {}
+    review.request.operation = webhook.OPERATION_UPDATE
+
+    response = client.post(
+        "/validate-update-v1-pod", json=responses._response(review)
+    ).json().get("response")
+    assert response["allowed"] is False
+
+    review = copy.deepcopy(admission_review)
+    review = types.AdmissionReview(**review)
+    review.request.old_object = copy.deepcopy(review.request.object)
+    review.request.operation = webhook.OPERATION_UPDATE
+
+    response = client.post(
+        "/validate-update-v1-pod", json=responses._response(review),
+    ).json().get("response")
+    assert response["allowed"] is True
 
