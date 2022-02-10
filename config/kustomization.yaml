@@ -1,8 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
-- name: kfp-artifact-api
-  newName: jackhoman/kfp-artifact-api
+- name: webhooks
+  newName: jackhoman/webhooks
   newTag: latest
 
 resources:
@@ -10,4 +10,4 @@ resources:
 - service.yaml
 - rbac.yaml
 
-namespace: kfp-artifact-api-system
+namespace: webhooks-system
