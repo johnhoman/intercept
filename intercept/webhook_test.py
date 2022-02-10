@@ -1,12 +1,11 @@
 import base64
 import json
 
-import fastapi
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kubernetes.client import V1Pod, V1Container
 
-from intercept.webhook import mutating_webhook, MutatingWebhook
+from intercept import webhook
 
 
 def get_patch(patch: str):
@@ -132,7 +131,7 @@ app = FastAPI()
 
 
 @app.post("/mutate")
-@mutating_webhook(V1Pod)
+@webhook.mutating(V1Pod)
 def add_init(pod):
     pod.spec.init_containers = [V1Container(command="ls -lart", name="list-dir")]
 
@@ -149,18 +148,16 @@ def test_add_init_container():
     assert patch[0]["value"] == [{"command": "ls -lart", "name": "list-dir"}]
 
 
-def test_add_init_container_again():
-    def add_init_container(pod):
-        pod.spec.init_containers = [V1Container(command="ls -lart", name="list-dir")]
+@app.post("/validate-labels-v1-pod")
+@webhook.validate_create(V1Pod)
+def validate_name(pod):
+    try:
+        pod.metadata.labels["component"]
+    except KeyError:
+        raise webhook.Denied("invalid name found")
 
-    a = fastapi.FastAPI()
 
-    webhook = MutatingWebhook(app=a)
-    path = webhook.register(V1Pod, add_init_container)
-    c = TestClient(a)
-    response = c.post(path, json=admission_review).json().get("response")
-    assert response["allowed"] is True
-    patch = get_patch(response["patch"])
-    assert patch[0]["op"] == "add"
-    assert patch[0]["path"] == "/spec/initContainers"
-    assert patch[0]["value"] == [{"command": "ls -lart", "name": "list-dir"}]
+def test_validate_create():
+    response = client.post("/validate-labels-v1-pod", json=admission_review).json().get("response")
+    assert response["allowed"] is False
+

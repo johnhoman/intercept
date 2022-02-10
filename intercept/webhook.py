@@ -1,17 +1,14 @@
 import json
 import typing
 
-import fastapi
 from kubernetes.client import ApiClient
-from kubernetes.client import (
-    V1MutatingWebhookConfiguration,
-    V1MutatingWebhook,
-    AdmissionregistrationV1WebhookClientConfig,
-    AdmissionregistrationV1ServiceReference,
-)
 
 from intercept.types import Object, AdmissionReview
-from intercept.responses import patch
+from intercept.responses import patch, allowed, denied
+
+
+class Denied(Exception):
+    pass
 
 
 class _Req(object):
@@ -19,8 +16,8 @@ class _Req(object):
         self.data = json.dumps(data)
 
 
-def mutating_webhook(type_):
-    def outer(defaulter: typing.Callable[[Object], Object]):
+def mutating(type_):
+    def outer(defaulter: typing.Callable[[Object], dict]):
         def inner(admission_review: AdmissionReview):
 
             obj = ApiClient().deserialize(
@@ -33,17 +30,55 @@ def mutating_webhook(type_):
     return outer
 
 
-class MutatingWebhook(object):
+OPERATION_CREATE = "CREATE"
+OPERATION_UPDATE = "UPDATE"
+OPERATION_DELETE = "DELETE"
 
-    def __init__(self, app=None):
-        self._app = app or fastapi.FastAPI()
 
-    def register(self, type_, function, options=None):
-        type_name = type_.__name__
-        func_name = function.__name__.replace("_", "-")
-        path = f"/mutate-{type_name}-{func_name}"
-        self._app.post(path, response_model=AdmissionReview)(
-            mutating_webhook(type_)(function)
-        )
+def validate_create(type_):
+    def outer(validator: typing.Callable[[Object], dict]):
+        def inner(admission_review: AdmissionReview):
+            admit_op = admission_review.request.operation
+            if admit_op != OPERATION_CREATE:
+                return allowed(admission_review)
 
-        return path
+            obj = ApiClient().deserialize(
+                _Req(admission_review.request.object),
+                type_,
+            )
+
+            try:
+                validator(obj)
+            except Denied as err:
+                return denied(admission_review, str(err))
+            return allowed(admission_review)
+
+        return inner
+    return outer
+
+
+def validate_update(type_):
+    def outer(validator: typing.Callable[[Object, Object], dict]):
+        def inner(admission_review: AdmissionReview):
+            admit_op = admission_review.request.operation
+            if admit_op != OPERATION_CREATE:
+                return allowed(admission_review)
+
+            obj = ApiClient().deserialize(
+                _Req(admission_review.request.object),
+                type_,
+            )
+            old = ApiClient().deserialize(
+                _Req(admission_review.request.old_object),
+                type_,
+            )
+
+            try:
+                validator(obj, old)
+            except Denied as err:
+                return denied(admission_review, str(err))
+            return allowed(admission_review)
+
+        return inner
+    return outer
+

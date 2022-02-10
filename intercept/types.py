@@ -36,7 +36,7 @@ class AdmissionRequest(BaseModel):
 class AdmissionResponse(BaseModel):
     uid: str
     allowed: bool
-    result: dict = None
+    status: dict = None
     patch: str = None
     patch_type: str = Field("JSONPatch", alias="patchType")
     warnings: typing.List[str] = None
