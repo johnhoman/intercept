@@ -3,8 +3,9 @@ import typing
 from functools import partial
 
 from kubernetes.client import ApiClient
+from fastapi.logger import logger
 
-from intercept.types import Object, AdmissionReview
+from intercept.models import Object, AdmissionReview
 from intercept.responses import patch, allowed, denied
 
 

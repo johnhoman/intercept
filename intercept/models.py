@@ -17,8 +17,8 @@ class GroupVersionResource(BaseModel):
 
 
 class UserInfo(BaseModel):
-    username: str
-    uid: str
+    username: typing.Optional[str]
+    uid: typing.Optional[str]
     groups: List[str]
 
 
@@ -32,14 +32,20 @@ class AdmissionRequest(BaseModel):
     object: dict
     old_object: dict = Field(None, alias="oldObject")
 
+    class Config:
+        allow_population_by_field_name = True
+
 
 class AdmissionResponse(BaseModel):
     uid: str
     allowed: bool
     status: dict = None
     patch: str = None
-    patch_type: str = Field("JSONPatch", alias="patchType")
+    patch_type: str = Field(None, alias="patchType")
     warnings: typing.List[str] = None
+
+    class Config:
+        allow_population_by_field_name = True
 
 
 class AdmissionReview(BaseModel):
@@ -47,6 +53,9 @@ class AdmissionReview(BaseModel):
     api_version: str = Field(..., alias="apiVersion")
     request: AdmissionRequest
     response: AdmissionResponse = None
+
+    class Config:
+        allow_population_by_field_name = True
 
 
 class Object(typing.Protocol):

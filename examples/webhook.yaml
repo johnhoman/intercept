@@ -1,0 +1,25 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: webhooks
+  namespace: system
+  annotations:
+    cert-manager.io/inject-ca-from-secret: system/webhooks-tls
+webhooks:
+- name: webhooks.intercept.com
+  admissionReviewVersions: [v1]
+  sideEffects: None
+  objectSelector:
+    matchLabels:
+      foo: bar
+  clientConfig:
+    service:
+      namespace: system
+      name: webhooks
+      path: /mutate-add-env-var
+      port: 80
+  rules:
+  - operations: ["CREATE"]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]

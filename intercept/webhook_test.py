@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from kubernetes.client import V1Pod, V1Container
 
 from intercept import webhook
-from intercept import types
+from intercept import models
 from intercept import responses
 
 
@@ -149,6 +149,7 @@ def test_add_init_container():
     assert patch[0]["op"] == "add"
     assert patch[0]["path"] == "/spec/initContainers"
     assert patch[0]["value"] == [{"command": "ls -lart", "name": "list-dir"}]
+    assert "patchType" in response["response"]
 
 
 @app.post("/validate-labels-v1-pod")
@@ -174,7 +175,7 @@ def validate_label_change(new, old):
 
 def test_validate_update():
     review = copy.deepcopy(admission_review)
-    review = types.AdmissionReview(**review)
+    review = models.AdmissionReview(**review)
     review.request.old_object = copy.deepcopy(review.request.object)
     review.request.object["metadata"]["labels"] = {}
     review.request.operation = webhook.OPERATION_UPDATE
@@ -185,7 +186,7 @@ def test_validate_update():
     assert response["allowed"] is False
 
     review = copy.deepcopy(admission_review)
-    review = types.AdmissionReview(**review)
+    review = models.AdmissionReview(**review)
     review.request.old_object = copy.deepcopy(review.request.object)
     review.request.operation = webhook.OPERATION_UPDATE
 

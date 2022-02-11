@@ -1,0 +1,22 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: webhooks-selfsigned-issuer
+  namespace: system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: webhooks
+  namespace: system
+spec:
+  secretName: webhooks-tls
+  dnsNames:
+  - webhooks.system
+  - webhooks.system.svc
+  - webhooks.system.svc.cluster.local
+  issuerRef:
+    name: webhooks-selfsigned-issuer

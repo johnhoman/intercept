@@ -18,16 +18,22 @@ spec:
       labels:
         app: webhooks
     spec:
+      volumes:
+      - name: webhooks-tls
+        secret:
+          secretName: webhooks-tls
       containers:
         - command:
-          - uvicorn
-          args:
-          - main:app
-          - --host=0.0.0.0
-          - --port=8888
+          - python
+          - /main.py
+          volumeMounts:
+          - name: webhooks-tls
+            mountPath: "/tmp/serving-certs"
+            readOnly: true
           ports:
           - containerPort: 8888
-          image: wehbooks:latest
+          image: jackhoman/webhooks:latest
+          imagePullPolicy: Never
           name: webhooks
           securityContext:
             allowPrivilegeEscalation: false

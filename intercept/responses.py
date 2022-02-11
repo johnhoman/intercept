@@ -2,7 +2,7 @@ import base64
 
 import jsonpatch
 
-from intercept.types import AdmissionResponse, AdmissionReview, Object
+from intercept.models import AdmissionResponse, AdmissionReview
 
 
 def _response(admission_review: AdmissionReview) -> dict:
@@ -21,7 +21,8 @@ def patch(admission_review: AdmissionReview, obj: dict) -> dict:
     response = AdmissionResponse(
         allowed=True,
         uid=admission_review.request.uid,
-        patch=base64.b64encode(str(p).encode()).decode()
+        patch=base64.b64encode(str(p).encode()).decode(),
+        patch_type="JSONPatch",
     )
     admission_review.response = response
     return _response(admission_review)
