@@ -23,7 +23,7 @@ def add_env_var_2(container: V1Container):
 @webhook.defaulting.pod(labels=dict(foo="bar"))
 def add_env_var_3(pod: V1Pod):
     pod.spec.containers[0].env.append(V1EnvVar(
-        name="USERNAME", value="bhoman"
+        name="USERNAME", value="me"
     ))
 
 
