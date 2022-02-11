@@ -1,3 +1,5 @@
+import fastapi
+
 from intercept.webhook import Manager, GVK
 from intercept.webhook import subresource
 from intercept.webhook import set_defaults
@@ -8,24 +10,14 @@ webhook = Manager()
 
 
 @webhook.defaulting.pod(labels=dict(foo="bar"))
-@subresource("spec", "containers", 0)
-@set_defaults(env=list)
-def add_env_var_1(container: V1Container):
-    container.env.append(V1EnvVar(name="USER", value="jhoman"))
+def add_env_var_1(pod: V1Pod):
+    pod.spec.containers[0].env.append(V1EnvVar(name="USER", value="jhoman"))
 
 
 @webhook.defaulting(resource=GVK("", "v1", "Pod"), labels=dict(foo="bar"))
 @subresource("spec", "containers", 0)
 def add_env_var_2(container: V1Container):
     container.env.append(V1EnvVar(name="TMP", value="/tmp"))
-
-
-# @webhook.defaulting(resource=GVK("", "v1", "ServiceAccount"), labels=dict(foo="bar"))
-# @subresource("metadata", "annotations")
-# def add_annotation(annotations: dict):
-#     from fastapi.logger import logger
-#     logger.warning(annotations)
-#     annotations["key"] = "value"
 
 
 @webhook.defaulting.pod(labels=dict(foo="bar"))
