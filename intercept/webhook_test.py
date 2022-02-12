@@ -195,39 +195,3 @@ def test_validate_update():
         "/validate-update-v1-pod", json=responses._response(review),
     ).json().get("response")
     assert response["allowed"] is True
-
-
-def test_subresource_mutate_pod():
-    from kubernetes.client import V1Pod, V1PodSpec, V1Container
-
-    pod = V1Pod(
-        spec=V1PodSpec(
-            containers=[V1Container(name="http")]
-        )
-    )
-
-    @webhook.subresource("spec", "containers", 0)
-    def foo(container: V1Container):
-        container.name = "http2"
-        return container
-
-    assert foo(pod).spec.containers[0].name == "http2"
-
-
-def test_subresource_no_mutate():
-    from intercept.webhook import subresource
-    from kubernetes.client import V1ServiceAccount, V1ObjectMeta
-
-    service_account = V1ServiceAccount(
-        metadata=V1ObjectMeta(
-            name="my-service-account",
-        )
-    )
-
-    @subresource("metadata", "annotations", default_factory=dict)
-    def add_annotation(annotations: dict):
-        from fastapi.logger import logger
-        logger.warning(annotations)
-        annotations["key"] = "value"
-
-    assert add_annotation(service_account).metadata.annotations["key"] == "value"

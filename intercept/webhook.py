@@ -1,11 +1,10 @@
 import copy
 import inspect
 import json
-from functools import partial, wraps
+from functools import partial, singledispatch
 import os
 import typing
 import uuid
-import logging
 
 import uvicorn
 import fastapi
@@ -22,6 +21,28 @@ from kubernetes.client import (
 
 from intercept.models import Object, AdmissionReview
 from intercept.responses import patch, allowed, denied
+
+from kubernetes.client import (
+    V1Pod,
+    V1ServiceAccount,
+    V1Service,
+)
+
+
+@singledispatch
+def scheme(type_):
+    pass
+
+
+def _gvk(*args):
+    def inner(_):
+        return GroupVersionKind(*args)
+    return inner
+
+
+scheme.register(V1Pod)(_gvk("", "v1", "Pod"))
+scheme.register(V1ServiceAccount)(_gvk("", "v1", "ServiceAccount"))
+scheme.register(V1Service)(_gvk("", "v1", "Service"))
 
 
 class Denied(Exception):
@@ -121,72 +142,16 @@ def validate_delete(type_):
     return outer
 
 
-def set_defaults(**kwargs: typing.Type[typing.List[typing.Dict[typing.AnyStr, typing.Callable]]]):
-    """
-
-    :param kwargs:
-    :return:
-    """
-
-    def outer(func):
-        # @wraps(func)
-        def inner(instance: Object):
-            for key, value in kwargs.items():
-                if getattr(instance, key) is None:
-                    setattr(instance, key, value())
-            return func(instance) or instance
-        return inner
-    return outer
-
-
 def _do(func, obj: dict) -> dict:
     sig = inspect.signature(func)
     parameters = list(sig.parameters.values())
     parameter = parameters.pop()
     if parameter.annotation and hasattr(parameter.annotation, "openapi_types"):
-        from fastapi.logger import logger
-        logger.setLevel(logging.INFO)
-        logger.warning(obj)
-        logger.warning(parameter.annotation)
         obj = _deserialize(obj, parameter.annotation)
         obj = _serialize(func(obj) or obj)
     else:
         obj = func(obj) or obj
     return obj
-
-
-def subresource(*keys, default_factory: typing.Callable[[], typing.Any] = None):
-    def outer(func):
-        # @wraps(func)
-        def inner(instance: dict):
-
-            type_ = None
-            if hasattr(instance, "to_dict"):
-                type_ = type(instance)
-                instance = instance.to_dict()
-
-            current = instance
-
-            stack = []
-            for key in keys:
-                stack.append(current)
-                current = current[key]
-
-            if not current and default_factory:
-                current = default_factory()
-
-            current = _do(func, current)
-
-            for key in reversed(keys):
-                item = stack.pop()
-                item[key] = current
-                current = item
-
-            if type_:
-                current = _deserialize(current, type_)
-            return current
-        return inner
-    return outer
 
 
 class GroupVersionKind:
@@ -249,9 +214,6 @@ class _Defaulting:
 
     def register(self, app, client_config: AdmissionregistrationV1WebhookClientConfig = None):
 
-        from fastapi.logger import logger
-        from pprint import pprint
-        logger.warning(pprint(self._registry))
         webhooks = []
         # TODO: labels will collide
         for k, (key, types) in enumerate(self._registry.items()):
@@ -286,7 +248,6 @@ class _Defaulting:
                     obj = admission_review.request.object
                     for defaulter in defaulters:
                         if obj["kind"] == gvk.kind:
-                            logger.warning("applying defaulting function %s", defaulter.__name__)
                             obj = _do(defaulter, obj)
                     return patch(admission_review, obj)
 
@@ -302,6 +263,9 @@ class Manager:
     @property
     def defaulting(self):
         return self._defaulting
+
+    def manifest(self):
+        pass
 
     def start(self):
         tmpdir = os.getenv("$TMP", "/tmp")
