@@ -1,10 +1,10 @@
+from hashlib import md5
 import copy
 import inspect
 import json
 from functools import partial, singledispatch
 import os
 import typing
-import uuid
 
 import uvicorn
 import fastapi
@@ -218,7 +218,11 @@ class _Defaulting:
         # TODO: labels will collide
         for k, (key, types) in enumerate(self._registry.items()):
             for gvk, defaulters in types.items():
-                uid = str(uuid.uuid4())[:8]
+                m = md5()
+                m.update(key.encode())
+                digest = m.hexdigest()
+
+                uid = digest[:8]
                 path = f"/mutate-{gvk}-{uid}"
 
                 client_config = copy.deepcopy(client_config)
