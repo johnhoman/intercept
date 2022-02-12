@@ -9,6 +9,6 @@ spec:
     app: webhooks
   type: ClusterIP
   ports:
-  - port: 80
-    targetPort: 8888
+  - port: 443
+    targetPort: 8443
     name: http

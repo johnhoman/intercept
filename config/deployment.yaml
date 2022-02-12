@@ -41,7 +41,7 @@ spec:
             #   fieldRef:
             #     fieldPath: metadata.name
           ports:
-          - containerPort: 8888
+          - containerPort: 8443
           image: jackhoman/webhooks:latest
           imagePullPolicy: Never
           name: webhooks
