@@ -1,10 +1,10 @@
 from hashlib import md5
-import copy
 import inspect
 import json
 from functools import partial, singledispatch
 import os
 import typing
+import yaml
 
 import uvicorn
 import fastapi
@@ -21,28 +21,6 @@ from kubernetes.client import (
 
 from intercept.models import Object, AdmissionReview
 from intercept.responses import patch, allowed, denied
-
-from kubernetes.client import (
-    V1Pod,
-    V1ServiceAccount,
-    V1Service,
-)
-
-
-@singledispatch
-def scheme(type_):
-    pass
-
-
-def _gvk(*args):
-    def inner(_):
-        return GroupVersionKind(*args)
-    return inner
-
-
-scheme.register(V1Pod)(_gvk("", "v1", "Pod"))
-scheme.register(V1ServiceAccount)(_gvk("", "v1", "ServiceAccount"))
-scheme.register(V1Service)(_gvk("", "v1", "Service"))
 
 
 class Denied(Exception):
@@ -199,63 +177,55 @@ class _Defaulting:
         self._registry = {}
 
     def __call__(self, *, labels: dict = None, resource: GroupVersionKind = None):
+
         def inner(defaulter: typing.Callable[[Object], dict]):
-            key = json.dumps(labels, sort_keys=True)
-            shared_labels = self._registry.setdefault(key, {})
-            defaulters = shared_labels.setdefault(resource, [])
+            dumped = json.dumps(labels, sort_keys=True).encode()
+            m = md5()
+            m.update(dumped)
+            key = (dumped, f"{resource}-{m.hexdigest()[:8]}", resource)
+
+            defaulters = self._registry.setdefault(key, [])
             defaulters.append(defaulter)
         return inner
 
     def pod(self, labels: dict = None) -> typing.Callable:
-        return self(labels=labels, resource=GroupVersionKind("", "v1", "Pod"))
+        return self(labels=labels, resource=GVK("", "v1", "Pod"))
 
     def service_account(self, labels: dict = None) -> typing.Callable:
-        return self(labels=labels, resource=GroupVersionKind("", "v1", "ServiceAccount"))
+        return self(labels=labels, resource=GVK("", "v1", "ServiceAccount"))
 
-    def register(self, app, client_config: AdmissionregistrationV1WebhookClientConfig = None):
-
+    def webhooks(self) -> typing.List[V1MutatingWebhook]:
         webhooks = []
-        # TODO: labels will collide
-        for k, (key, types) in enumerate(self._registry.items()):
-            for gvk, defaulters in types.items():
-                m = md5()
-                m.update(key.encode())
-                digest = m.hexdigest()
-
-                uid = digest[:8]
-                path = f"/mutate-{gvk}-{uid}"
-
-                client_config = copy.deepcopy(client_config)
-                client_config.service.path = path
-
-                webhook = V1MutatingWebhook(
-                    client_config=client_config,
-                    name=f"intercept.mutate.{gvk}-{uid}".lower(),
-                    object_selector=V1LabelSelector(
-                        match_labels=json.loads(key),
+        for (labels, key, gvk), defaulters in self._registry.items():
+            webhook = V1MutatingWebhook(
+                client_config=AdmissionregistrationV1WebhookClientConfig(),
+                name=f"intercept.mutate.{key}".lower(),
+                object_selector=V1LabelSelector(
+                    match_labels=json.loads(labels),
+                ),
+                admission_review_versions=["v1"],
+                side_effects="None",
+                rules=[
+                    V1RuleWithOperations(
+                        api_groups=[gvk.group],
+                        api_versions=[gvk.version],
+                        resources=[f"{gvk.kind.lower()}s"],
+                        operations=[OPERATION_CREATE, OPERATION_UPDATE]
                     ),
-                    admission_review_versions=["v1"],
-                    side_effects="None",
-                    rules=[
-                        V1RuleWithOperations(
-                            api_groups=[gvk.group],
-                            api_versions=[gvk.version],
-                            resources=[gvk.kind.lower() + "s"],
-                            operations=[OPERATION_CREATE, OPERATION_UPDATE]
-                        ),
-                    ]
-                )
-                webhooks.append(webhook)
-
-                @app.post(path)
-                def review(admission_review: AdmissionReview):
-                    obj = admission_review.request.object
-                    for defaulter in defaulters:
-                        if obj["kind"] == gvk.kind:
-                            obj = _do(defaulter, obj)
-                    return patch(admission_review, obj)
-
+                ]
+            )
+            webhooks.append(webhook)
         return webhooks
+
+    def register(self, app):
+        for (_, key, gvk), defaulters in self._registry.items():
+            @app.post(f"/mutate-{key}")
+            def review(admission_review: AdmissionReview):
+                obj = admission_review.request.object
+                for defaulter in defaulters:
+                    if obj["kind"] == gvk.kind:
+                        obj = _do(defaulter, obj)
+                return patch(admission_review, obj)
 
 
 class Manager:
@@ -268,48 +238,23 @@ class Manager:
     def defaulting(self):
         return self._defaulting
 
-    def manifest(self):
-        pass
+    def manifest(self) -> str:
+        webhooks = self._defaulting.webhooks()
+        webhook_config = V1MutatingWebhookConfiguration(
+            metadata={},
+            webhooks=webhooks,
+        )
+        return yaml.safe_dump(_serialize(webhook_config), default_flow_style=False)
 
     def start(self):
         tmpdir = os.getenv("$TMP", "/tmp")
         cert_dir = os.path.join(tmpdir, "serving-certs")
 
-        service_name = os.getenv("SERVICE_NAME")
-        service_namespace = os.getenv("SERVICE_NAMESPACE")
-
-        from kubernetes.config import load_incluster_config
-        load_incluster_config()
-
-        with open(os.path.join(cert_dir, "ca.crt"), mode="rb") as open_file:
-            import base64
-            ca_bundle = base64.b64encode(open_file.read()).decode()
-
-        client_config = AdmissionregistrationV1WebhookClientConfig(
-            ca_bundle=ca_bundle,
-            service=AdmissionregistrationV1ServiceReference(
-                name=service_name,
-                namespace=service_namespace,
-                port=80,
-            )
-        )
-
-        webhook_config = V1MutatingWebhookConfiguration(
-            metadata={
-                "name": f"{service_name}-{service_namespace}",
-            },
-            webhooks=self._defaulting.register(self._app, client_config=client_config),
-        )
-
-        api = AdmissionregistrationV1Api()
-        api.create_mutating_webhook_configuration(webhook_config)
-
         uvicorn.run(
             self._app,
             host="0.0.0.0",
-            port=8888,
+            port=8443,
             log_level="info",
             ssl_certfile=os.path.join(cert_dir, "tls.crt"),
             ssl_keyfile=os.path.join(cert_dir, "tls.key"),
         )
-        api.delete_mutating_webhook_configuration(webhook_config.metadata["name"])
